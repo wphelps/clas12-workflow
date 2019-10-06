@@ -3,7 +3,7 @@ import re
 import glob
 import collections
 
-__FILEREGEX='.*clas[_A-Za-z]*_(\d+)\.evio\.(\d+)'
+__FILEREGEX='.*clas[_A-Za-z]*_(\d+)\.evio\.(\d+-*\d*)'
 __DEBUG=False
 
 def setFileRegex(regex):
@@ -15,6 +15,17 @@ def setFileRegex(regex):
 def getFileRegex():
   return __FILEREGEX
 
+def stringToInt(string):
+  if string=='':
+    return None
+  else:
+    string=string.lstrip('0')
+    if string=='': string='0'
+    try:
+      return int(string)
+    except:
+      return None
+
 def getRunFileNumber(fileName):
   mm = re.match(__FILEREGEX,fileName)
   if mm is None:
@@ -22,13 +33,14 @@ def getRunFileNumber(fileName):
       print 'WARNING:  getRunFileNumber Failed on  '+fileName
     return None
   runno=mm.group(1)
-  fileno=mm.group(2)
-  # strip off leading zeroes for conversion to int, leaving '0':
-  while runno.find('0')==0 and not runno=='0':
-    runno=runno[1:]
-  while fileno.find('0')==0 and not fileno=='0':
-    fileno=fileno[1:]
-  return {'run':int(runno),'file':int(fileno)}
+  filenos=mm.group(2)
+  if filenos.find('-')>0:
+    start,end=fileno.split('-')
+    filenos=range(stringToInt(start),stringToInt(end)+1)
+  else:
+    filenos=[stringToInt(filenos)]
+  runno=stringToInt(runno)
+  return {'run':int(runno),'file':filenos}
 
 class RunFile:
   def __init__(self,fileName):
@@ -69,44 +81,41 @@ class RunFile:
   def show(self):
     print self.fileName,self.runNumber,self.fileNumber
 
-# TODO:  make this a subclass of list
-class RunFileGroup():
+class RunFileGroup(list):
   def __init__(self):
+    list.__init__(self)
     self.runNumber=None
-    self.runFileList=[]
-  def size(self):
-    return len(self.runFileList)
-  def add(self,rf):
+  def append(self,rf):
     if not isinstance(rf,RunFile):
       raise TypeError('must be a RunFile')
     elif rf is None or rf.runNumber is None:
       return
     elif self.runNumber is None:
       self.runNumber = rf.runNumber
-      self.runFileList.append(rf)
+      list.append(self,rf)
     elif self.runNumber != rf.runNumber:
       raise ValueError('multiple run nubmers ',rf.runNumber)
-    elif rf in self.runFileList:
+    elif rf in self:
       raise ValueError('duplicate: ',str(rf))
     else:
       inserted=False
-      for ii in range(len(self.runFileList)):
-        if rf < self.runFileList[ii]:
-          self.runFileList.insert(ii,rf)
+      for ii in range(len(self)):
+        if rf < list.__getitem__(self,ii):
+          list.insert(self,ii,rf)
           inserted=True
           break
       if not inserted:
-        self.runFileList.append(rf)
+        list.append(self,rf)
   def addFile(self,fileName):
-    self.add(RunFile(fileName))
+    self.append(RunFile(fileName))
   def __str__(self):
     xx=str(self.runNumber)+'('
-    xx += ','.join([str(yy.fileNumber) for yy in self.runFileList])
+    xx += ','.join([str(yy.fileNumber) for yy in self])
     xx+=')'
     return xx
   def show(self):
     print str(self.runNumber)
-    for rf in self.runFileList: rf.show()
+    for rf in self: rf.show()
 
 class RunFileGroups:
 
@@ -182,7 +191,7 @@ class RunFileGroups:
           groups.append(phaseList)
         phaseList=[]
       # loop over the files in this run:
-      for rf in rfg.runFileList:
+      for rf in rfg:
         phaseList.append(rf.fileName)
         # make a new group if we're over the size limit:
         if self.groupSize>0 and len(phaseList)>=self.groupSize:
@@ -196,14 +205,14 @@ class RunFileGroups:
   def getFlatList(self):
     flatList=[]
     for run,rfg in self.rfgs.iteritems():
-      for rf in rfg.runFileList:
+      for rf in rfg:
         flatList.append(rf.fileName)
     return flatList
 
   def getRunList(self,minFileCount=-1):
     runs=[]
     for run,rfg in self.rfgs.iteritems():
-      if minFileCount>0 and rfg.size()<minFileCount: continue
+      if minFileCount>0 and len(rfg)<minFileCount: continue
       runs.append(run)
     return runs
 
